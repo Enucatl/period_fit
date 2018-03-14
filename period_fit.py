@@ -3,26 +3,33 @@ import click
 import glob
 import os
 import numpy as np
-from PIL import Image
-from cogent.maths.period import dft
+import h5py
+import scipy.signal as ss
+import matplotlib.pyplot as plt
+
 
 @click.command()
-@click.argument("scan_range", type=float)
-@click.argument("folder", type=click.Path(exists=True))
-def main(scan_range, folder):
-    filenames = sorted(
-        glob.glob(
-            os.path.join(
-                folder, "*.tif")
-        )
-    )
-    images = [Image.open(x) for x in filenames]
-    arrays = [np.array(x) for x in images]
-    a = np.dstack(arrays)
-    pwr, period = dft(a)
-    pwr = abs(pwr)
-    print(pwr.shape, period.shape)
-
+@click.argument("filename", type=click.Path(exists=True))
+@click.option("--fs", type=float, default=1, help="sampling frequency")
+def main(filename, fs):
+    with h5py.File(filename, "r") as h5file:
+        group = h5file["/entry/data/threshold_0"]
+        dataset_names = sorted(list(group.keys()))
+        a = np.dstack(group[key] for key in dataset_names)
+        print(a.shape)
+        f, pxx = ss.periodogram(a, fs)
+        print(f.shape)
+        print(pxx.shape)
+        indices_sorted = np.argsort(np.abs(pxx))[::-1]
+        for i in range(1, indices_sorted.shape[-1]):
+            indices = indices_sorted[:, :, i]
+            periods = 1 / f[indices]
+            valid_periods = periods[a[..., 0] > 0]
+            valid_periods = valid_periods[valid_periods > 0.5]
+            print(i, np.size(valid_periods), np.mean(valid_periods), np.std(valid_periods))
+        # plt.ion()
+        # plt.show()
+        # input("close")
 
 
 if __name__ == "__main__":
